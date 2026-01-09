@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neo-Pet: AI 进化电子宠物</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        /* 字体 */
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&display=swap');
+        
+        .pet-font { 
+            font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif; 
+        }
+        
+        :root {
+            --pet-size: 180px;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, #fdfbf7 0%, #f0f4f8 100%);
+            overflow: hidden;
+            touch-action: manipulation;
+        }
+
+        .pet-container {
+            width: var(--pet-size);
+            height: var(--pet-size);
+            position: relative;
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .pet-bounce {
+            animation: bounce 2s infinite ease-in-out;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0) scale(1); }
+            50% { transform: translateY(-15px) scale(1.02); }
+        }
+
+        .pet-shake {
+            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+        }
+
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+
+        .stat-bar {
+            transition: width 0.5s ease-in-out;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(10px);
+            border-top: 1px solid rgba(0,0,0,0.05);
+        }
+
+        #pet-display-img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            pointer-events: none;
+            filter: drop-shadow(0 10px 15px rgba(0,0,0,0.1));
+        }
+
+        .loading-dots:after {
+            content: '.';
+            animation: dots 1s steps(5, end) infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% { content: '.'; }
+            40% { content: '..'; }
+            60% { content: '...'; }
+            80%, 100% { content: ''; }
+        }
+
+        .explore-scene {
+            position: relative;
+            width: 100%;
+            height: 280px;
+            overflow: hidden;
+            border-radius: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 4px solid rgba(255,255,255,0.3);
+            box-shadow: inset 0 0 50px rgba(0,0,0,0.2);
+            transition: background 1s ease;
+        }
+
+        .anime-clouds {
+            position: absolute;
+            width: 200%;
+            height: 100%;
+            background-image: 
+                radial-gradient(circle at 20% 30%, rgba(255,255,255,0.8) 0%, transparent 10%),
+                radial-gradient(circle at 50% 20%, rgba(255,255,255,0.6) 0%, transparent 15%),
+                radial-gradient(circle at 80% 40%, rgba(255,255,255,0.7) 0%, transparent 12%);
+            animation: moveClouds 20s linear infinite;
+        }
+
+        @keyframes moveClouds {
+            from { transform: translateX(0); }
+            to { transform: translateX(-50%); }
+        }
+
+        .parallax-scenery {
+            position: absolute;
+            bottom: 40px;
+            white-space: nowrap;
+            display: flex;
+            gap: 120px;
+            animation: scrollAnime 10s linear infinite;
+        }
+
+        @keyframes scrollAnime {
+            from { transform: translateX(100%); }
+            to { transform: translateX(-150%); }
+        }
+
+        .explore-pet-anim {
+            z-index: 20;
+            transform: scale(0.9);
+            animation: walkCycle 0.6s infinite alternate ease-in-out;
+        }
+
+        @keyframes walkCycle {
+            from { transform: translateY(0) rotate(-3deg); }
+            to { transform: translateY(-15px) rotate(3deg); }
+        }
+
+        .modal-enter {
+            animation: modalFade 0.3s ease-out forwards;
+        }
+
+        @keyframes modalFade {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        .rarity-common { color: #94a3b8; }
+        .rarity-rare { color: #3b82f6; }
+        .rarity-epic { color: #a855f7; text-shadow: 0 0 10px rgba(168, 85, 247, 0.4); }
+
+        /* 按钮动画 */
+        .btn-primary {
+            transition: all 0.3s ease;
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body class="flex flex-col h-screen select-none pet-font">
+
+    <!-- 选择宠物遮罩 -->
+    <div id="selector-overlay" class="fixed inset-0 bg-gradient-to-br from-purple-100 via-pink-50 to-blue-100 flex items-center justify-center z-50">
+        <div class="bg-white/90 backdrop-blur-lg rounded-3xl shadow-2xl p-8 max-w-2xl w-11/12 modal-enter">
+            <h2 class="text-4xl font-bold text-center mb-3 bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                选择你的 Neo-Pet
+            </h2>
+            <p class="text-center text-slate-600 mb-8 text-lg">开启你的 AI 宠物进化之旅</p>
+            
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
+                <button onclick="selectPet('cat')" class="group flex flex-col items-center gap-3 p-6 rounded-2xl bg-gradient-to-br from-orange-100 to-orange-50 hover:from-orange-200 hover:to-orange-100 transition-all duration-300 transform hover:scale-105 hover:shadow-xl border-2 border-orange-200">
+                    <div class="text-6xl group-hover:scale-110 transition-transform">🐱</div>
+                    <span class="font-bold text-orange-800 text-lg">猫咪</span>
+                </button>
+                
+                <button onclick="selectPet('dog')" class="group flex flex-col items-center gap-3 p-6 rounded-2xl bg-gradient-to-br from-amber-100 to-amber-50 hover:from-amber-200 hover:to-amber-100 transition-all duration-300 transform hover:scale-105 hover:shadow-xl border-2 border-amber-200">
+                    <div class="text-6xl group-hover:scale-110 transition-transform">🐶</div>
+                    <span class="font-bold text-amber-800 text-lg">狗狗</span>
+                </button>
+                
+                <button onclick="selectPet('rabbit')" class="group flex flex-col items-center gap-3 p-6 rounded-2xl bg-gradient-to-br from-pink-100 to-pink-50 hover:from-pink-200 hover:to-pink-100 transition-all duration-300 transform hover:scale-105 hover:shadow-xl border-2 border-pink-200">
+                    <div class="text-6xl group-hover:scale-110 transition-transform">🐰</div>
+                    <span class="font-bold text-pink-800 text-lg">兔子</span>
+                </button>
+                
+                <button onclick="selectPet('hamster')" class="group flex flex-col items-center gap-3 p-6 rounded-2xl bg-gradient-to-br from-yellow-100 to-yellow-50 hover:from-yellow-200 hover:to-yellow-100 transition-all duration-300 transform hover:scale-105 hover:shadow-xl border-2 border-yellow-200">
+                    <div class="text-6xl group-hover:scale-110 transition-transform">🐹</div>
+                    <span class="font-bold text-yellow-800 text-lg">仓鼠</span>
+                </button>
+            </div>
+            
+            <div class="border-t-2 border-dashed border-slate-200 pt-6">
+                <label class="flex flex-col items-center gap-4 p-6 border-2 border-dashed border-purple-300 rounded-2xl hover:border-purple-400 hover:bg-purple-50/50 cursor-pointer transition-all group">
+                    <div class="text-5xl group-hover:scale-110 transition-transform">🎨</div>
+                    <span class="font-bold text-purple-700 text-lg">上传自定义图片</span>
+                    <span class="text-sm text-slate-500">支持 PNG/JPG/GIF，建议 500x500px</span>
+                    <input type="file" id="custom-pet-upload" accept="image/*" class="hidden" onchange="handleFileUpload(event)">
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主游戏界面 -->
+    <div id="game-screen" class="flex-1 flex flex-col hidden">
+        <!-- 顶部状态栏 -->
+        <div class="bg-white/80 backdrop-blur-sm shadow-md p-4 border-b border-slate-200">
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-3">
+                    <div id="pet-avatar" class="text-4xl"></div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span id="pet-name" class="font-bold text-xl text-slate-800"></span>
+                            <span id="pet-level" class="px-3 py-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-sm rounded-full font-bold shadow-lg">Lv.1</span>
+                        </div>
+                        <div class="w-48 h-2 bg-slate-200 rounded-full mt-2 overflow-hidden">
+                            <div id="exp-bar" class="h-full bg-gradient-to-r from-yellow-400 to-orange-500 transition-all duration-500" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex gap-2">
+                    <button onclick="openInventory()" class="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl hover:shadow-lg transition-all transform hover:scale-105 font-bold">
+                        🎒 背包
+                    </button>
+                </div>
+            </div>
+            
+            <!-- 状态条 -->
+            <div class="grid grid-cols-3 gap-3">
+                <div class="flex items-center gap-2">
+                    <span class="text-2xl">🍖</span>
+                    <div class="flex-1">
+                        <div class="flex justify-between text-sm mb-1">
+                            <span class="font-semibold text-slate-700">饥饿</span>
+                            <span id="hunger-text" class="font-bold text-orange-600">100%</span>
+                        </div>
+                        <div class="w-full h-3 bg-slate-200 rounded-full overflow-hidden">
+                            <div id="hunger-bar" class="stat-bar h-full bg-gradient-to-r from-orange-400 to-red-500 rounded-full" style="width: 100%"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex items-center gap-2">
+                    <span class="text-2xl">😊</span>
+                    <div class="flex-1">
+                        <div class="flex justify-between text-sm mb-1">
+                            <span class="font-semibold text-slate-700">快乐</span>
+                            <span id="joy-text" class="font-bold text-pink-600">100%</span>
+                        </div>
+                        <div class="w-full h-3 bg-slate-200 rounded-full overflow-hidden">
+                            <div id="joy-bar" class="stat-bar h-full bg-gradient-to-r from-pink-400 to-rose-500 rounded-full" style="width: 100%"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex items-center gap-2">
+                    <span class="text-2xl">⚡</span>
+                    <div class="flex-1">
+                        <div class="flex justify-between text-sm mb-1">
+                            <span class="font-semibold text-slate-700">精力</span>
+                            <span id="energy-text" class="font-bold text-blue-600">100%</span>
+                        </div>
+                        <div class="w-full h-3 bg-slate-200 rounded-full overflow-hidden">
+                            <div id="energy-bar" class="stat-bar h-full bg-gradient-to-r from-blue-400 to-cyan-500 rounded-full" style="width: 100%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 宠物显示区域 -->
+        <div class="flex-1 flex items-center justify-center relative overflow-hidden bg-gradient-to-b from-sky-100 to-green-50">
+            <!-- 背景装饰 -->
+            <div class="absolute inset-0 opacity-20">
+                <div class="absolute top-10 left-10 text-6xl animate-pulse">☁️</div>
+                <div class="absolute top-20 right-20 text-5xl animate-pulse" style="animation-delay: 1s">☁️</div>
+                <div class="absolute bottom-20 left-1/4 text-4xl">🌸</div>
+                <div class="absolute bottom-20 right-1/4 text-4xl" style="animation-delay: 0.5s">🌸</div>
+            </div>
+            
+            <div id="pet-target" class="pet-container pet-bounce cursor-pointer relative z-10">
+                <img id="pet-display-img" src="" alt="pet" class="w-full h-full">
+            </div>
+            
+            <div id="speech-bubble" class="absolute top-1/4 left-1/2 transform -translate-x-1/2 bg-white/95 backdrop-blur-sm px-6 py-4 rounded-3xl shadow-2xl max-w-xs text-center font-semibold text-slate-700 opacity-0 transition-all duration-300 border-2 border-purple-200"></div>
+        </div>
+
+        <!-- 底部操作栏 -->
+        <div class="glass-panel p-6 shadow-lg">
+            <div class="grid grid-cols-4 gap-3 mb-4">
+                <button onclick="interact('feed')" class="btn-primary flex flex-col items-center gap-2 p-4 bg-gradient-to-br from-orange-400 to-red-500 text-white rounded-2xl hover:shadow-xl transition-all font-bold text-lg">
+                    <span class="text-3xl">🍖</span>
+                    <span>喂食</span>
+                </button>
+                
+                <button onclick="interact('play')" class="btn-primary flex flex-col items-center gap-2 p-4 bg-gradient-to-br from-pink-400 to-rose-500 text-white rounded-2xl hover:shadow-xl transition-all font-bold text-lg">
+                    <span class="text-3xl">🎾</span>
+                    <span>玩耍</span>
+                </button>
+                
+                <button onclick="interact('sleep')" class="btn-primary flex flex-col items-center gap-2 p-4 bg-gradient-to-br from-indigo-400 to-purple-500 text-white rounded-2xl hover:shadow-xl transition-all font-bold text-lg">
+                    <span class="text-3xl">😴</span>
+                    <span id="sleep-btn-text">睡觉</span>
+                </button>
+                
+                <button onclick="startExplore()" id="explore-btn" class="btn-primary flex flex-col items-center gap-2 p-4 bg-gradient-to-br from-green-400 to-emerald-500 text-white rounded-2xl hover:shadow-xl transition-all font-bold text-lg">
+                    <span class="text-3xl">🗺️</span>
+                    <span>探索</span>
+                </button>
+            </div>
+            
+            <div class="flex gap-3">
+                <input 
+                    id="chat-input" 
+                    type="text" 
+                    placeholder="💬 和你的宠物聊聊天..." 
+                    class="flex-1 px-5 py-3 rounded-2xl border-2 border-slate-200 focus:border-purple-400 focus:outline-none bg-white/80 backdrop-blur-sm text-lg"
+                >
+                <button onclick="handleChat()" id="send-btn" class="btn-primary px-8 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-2xl hover:shadow-xl transition-all font-bold text-lg">
+                    发送
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 探索模态框 -->
+    <div id="explore-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-3xl shadow-2xl p-8 max-w-2xl w-11/12 modal-enter">
+            <h3 class="text-3xl font-bold text-center mb-6 bg-gradient-to-r from-green-600 to-blue-600 bg-clip-text text-transparent">
+                🗺️ 探索世界
+            </h3>
+            
+            <div id="explore-scene" class="explore-scene mb-6">
+                <div class="anime-clouds"></div>
+                <div class="parallax-scenery">
+                    <span style="font-size: 4rem;">🌳</span>
+                    <span style="font-size: 3rem;">🏔️</span>
+                    <span style="font-size: 3.5rem;">🌲</span>
+                    <span style="font-size: 4rem;">🏕️</span>
+                    <span style="font-size: 3rem;">🌾</span>
+                </div>
+                <div class="explore-pet-anim">
+                    <img id="explore-pet-img" src="" class="w-32 h-32">
+                </div>
+            </div>
+            
+            <div id="explore-status" class="text-center text-slate-600 mb-6 text-lg font-semibold">
+                探索中<span class="loading-dots"></span>
+            </div>
+            
+            <div class="flex gap-4">
+                <button onclick="stopExplore()" class="flex-1 btn-primary px-6 py-4 bg-gradient-to-r from-red-500 to-pink-500 text-white rounded-2xl hover:shadow-xl font-bold text-lg">
+                    ⏹️ 停止探索
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 背包模态框 -->
+    <div id="inventory-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-3xl shadow-2xl p-8 max-w-2xl w-11/12 max-h-[80vh] overflow-auto modal-enter">
+            <h3 class="text-3xl font-bold text-center mb-6 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                🎒 我的背包
+            </h3>
+            
+            <div id="inventory-grid" class="grid grid-cols-3 gap-4 mb-6">
+                <div class="text-center text-slate-400 col-span-3 py-12">
+                    <div class="text-6xl mb-4">📦</div>
+                    <p class="text-lg">背包空空如也</p>
+                    <p class="text-sm mt-2">去探索世界寻找宝物吧！</p>
+                </div>
+            </div>
+            
+            <button onclick="closeInventory()" class="w-full btn-primary px-6 py-4 bg-gradient-to-r from-slate-500 to-slate-600 text-white rounded-2xl hover:shadow-xl font-bold text-lg">
+                关闭
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // 配置
+        const CONFIG = {
+            apiKey: "", // 留空则聊天功能提示需要配置
+            model: "gemini-2.0-flash-exp",
+            decayRate: { hunger: 0.5, joy: 0.8 },
+            petEmojis: {
+                cat: ['🐱', '😺', '😸', '😻', '🐈'],
+                dog: ['🐶', '🐕', '🦮', '🐕‍🦺', '🐩'],
+                rabbit: ['🐰', '🐇'],
+                hamster: ['🐹']
+            },
+            scenes: [
+                { bg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', biome: '🌌 神秘星空', loot: ['✨星尘', '🌟流星碎片', '🔮水晶球'] },
+                { bg: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', biome: '🌸樱花林', loot: ['🌸樱花瓣', '🦋蝴蝶', '🍃春风'] },
+                { bg: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', biome: '🏖️阳光海滩', loot: ['🐚贝壳', '🦀螃蟹', '🏄冲浪板'] },
+                { bg: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)', biome: '🌿翠绿森林', loot: ['🍄蘑菇', '🌰松果', '🦌小鹿角'] },
+                { bg: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)', biome: '🏜️沙漠绿洲', loot: ['🏺古董', '💎宝石', '🌵仙人掌'] }
+            ]
+        };
+
+        // 状态
+        let state = {
+            type: null,
+            level: 1,
+            exp: 0,
+            hunger: 80,
+            joy: 70,
+            energy: 100,
+            isSleeping: false,
+            isExploring: false,
+            lastTick: Date.now(),
+            evolutionIndex: 0,
+            imageFailed: false,
+            customImageData: null,
+            inventory: []
+        };
+
+        // 工具函数
+        async function fetchWithRetry(url, options, retries = 3) {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, {
+                        ...options,
+                        headers: { 'Content-Type': 'application/json', ...options.headers }
+                    });
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    return response;
+                } catch (error) {
+                    if (i === retries - 1) throw error;
+                    await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+                }
+            }
+        }
+
+        // 选择宠物
+        function selectPet(type) {
+            state.type = type;
+            document.getElementById('selector-overlay').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('hidden');
+            initGame();
+        }
+
+        // 处理自定义图片上传
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                state.customImageData = e.target.result;
+                state.type = 'custom';
+                document.getElementById('selector-overlay').classList.add('hidden');
+                document.getElementById('game-screen').classList.remove('hidden');
+                initGame();
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // 渲染宠物形象
+        function renderPetAsset() {
+            const petImg = document.getElementById('pet-display-img');
+            const exploreImg = document.getElementById('explore-pet-img');
+            
+            if (state.type === 'custom' && state.customImageData) {
+                petImg.src = state.customImageData;
+                exploreImg.src = state.customImageData;
+                document.getElementById('pet-avatar').textContent = '🎨';
+                document.getElementById('pet-name').textContent = '自定义宠物';
+            } else {
+                const emoji = CONFIG.petEmojis[state.type]?.[state.evolutionIndex] || CONFIG.petEmojis[state.type]?.[0] || '🐾';
+                
+                // 使用 Twemoji CDN
+                const codePoint = emoji.codePointAt(0).toString(16);
+                const imgUrl = `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${codePoint}.svg`;
+                
+                petImg.src = imgUrl;
+                exploreImg.src = imgUrl;
+                
+                petImg.onerror = () => {
+                    petImg.src = `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="75" font-size="75">${emoji}</text></svg>`;
+                    exploreImg.src = petImg.src;
+                };
+                
+                document.getElementById('pet-avatar').textContent = emoji;
+                const names = { cat: '小猫咪', dog: '小狗狗', rabbit: '小兔兔', hamster: '小仓鼠' };
+                document.getElementById('pet-name').textContent = names[state.type] || '神秘宠物';
+            }
+        }
+
+        // 初始化游戏
+        function initGame() {
+            const hasLoad = loadGame();
+            renderPetAsset();
+            requestAnimationFrame(gameLoop);
+            
+            setInterval(saveGame, 10000);
+            
+            if (hasLoad) {
+                speak("欢迎回来，主人！我好想你~ 💕");
+            } else {
+                speak("你好呀，我的主人！点击我或使用下方按钮和我互动吧！");
+            }
+        }
+
+        // 游戏主循环
+        function gameLoop() {
+            const now = Date.now();
+            const delta = (now - state.lastTick) / 1000;
+            state.lastTick = now;
+
+            if (!state.isSleeping && !state.isExploring) {
+                state.hunger = Math.max(0, state.hunger - CONFIG.decayRate.hunger * delta);
+                state.joy = Math.max(0, state.joy - CONFIG.decayRate.joy * delta);
+                
+                if (state.hunger < 30) speak("主人，我好饿呀~ 🥺");
+                if (state.joy < 30) speak("好无聊呀，陪我玩玩嘛~ 😢");
+            }
+
+            if (state.isSleeping && state.energy < 100) {
+                state.energy = Math.min(100, state.energy + 5 * delta);
+                if (state.energy >= 100) {
+                    state.isSleeping = false;
+                    document.getElementById('sleep-btn-text').textContent = '睡觉';
+                    speak("睡得好香！精神满满！✨");
+                }
+            }
+
+            updateUI();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // 更新界面
+        function updateUI() {
+            document.getElementById('pet-level').textContent = `Lv.${state.level}`;
+            document.getElementById('hunger-text').textContent = `${Math.round(state.hunger)}%`;
+            document.getElementById('joy-text').textContent = `${Math.round(state.joy)}%`;
+            document.getElementById('energy-text').textContent = `${Math.round(state.energy)}%`;
+            
+            document.getElementById('hunger-bar').style.width = `${state.hunger}%`;
+            document.getElementById('joy-bar').style.width = `${state.joy}%`;
+            document.getElementById('energy-bar').style.width = `${state.energy}%`;
+            
+            const expNeeded = state.level * 100;
+            const expPercent = (state.exp / expNeeded) * 100;
+            document.getElementById('exp-bar').style.width = `${expPercent}%`;
+        }
+
+        // 互动
+        function interact(action) {
+            const petContainer = document.getElementById('pet-target');
+            petContainer.classList.remove('pet-bounce');
+            petContainer.classList.add('pet-shake');
+            setTimeout(() => {
+                petContainer.classList.remove('pet-shake');
+                petContainer.classList.add('pet-bounce');
+            }, 500);
+
+            switch(action) {
+                case 'feed':
+                    if (state.hunger < 100) {
+                        state.hunger = Math.min(100, state.hunger + 30);
+                        speak("好好吃！谢谢主人~ 😋");
+                        gainExp(10);
+                    } else {
+                        speak("我已经吃饱啦~ 💕");
+                    }
+                    break;
+                
+                case 'play':
+                    if (state.energy >= 20) {
+                        state.energy -= 20;
+                        state.joy = Math.min(100, state.joy + 25);
+                        speak("哇！好开心！我们再玩一次！🎉");
+                        gainExp(15);
+                    } else {
+                        speak("我有点累了，让我休息一下吧~ 😴");
+                    }
+                    break;
+                
+                case 'sleep':
+                    if (!state.isSleeping) {
+                        state.isSleeping = true;
+                        document.getElementById('sleep-btn-text').textContent = '睡眠中...';
+                        speak("晚安，主人~ 😴💤");
+                    }
+                    break;
+            }
+        }
+
+        // 获得经验
+        function gainExp(amount) {
+            state.exp += amount;
+            checkEvolution();
+        }
+
+        // 检查进化
+        function checkEvolution() {
+            const expNeeded = state.level * 100;
+            if (state.exp >= expNeeded) {
+                state.level++;
+                state.exp -= expNeeded;
+                
+                if (CONFIG.petEmojis[state.type] && state.evolutionIndex < CONFIG.petEmojis[state.type].length - 1) {
+                    state.evolutionIndex++;
+                    renderPetAsset();
+                    speak(`恭喜！我进化到 Lv.${state.level} 了！✨🎉`);
+                } else {
+                    speak(`升级啦！现在是 Lv.${state.level}！💪`);
+                }
+            }
+        }
+
+        // 说话气泡
+        function speak(text) {
+            const bubble = document.getElementById('speech-bubble');
+            bubble.innerHTML = text;
+            bubble.style.opacity = '1';
+            bubble.style.transform = 'translate(-50%, -10px)';
+            
+            setTimeout(() => {
+                bubble.style.opacity = '0';
+                bubble.style.transform = 'translate(-50%, 0)';
+            }, 3000);
+        }
+
+        // 聊天功能
+        async function handleChat() {
+            const input = document.getElementById('chat-input');
+            const text = input.value.trim();
+            if (!text) return;
+            
+            if (!CONFIG.apiKey || CONFIG.apiKey === "") {
+                speak("💬 聊天功能需要配置 API Key<br><small class='text-xs opacity-70'>其他功能都可以正常使用！</small>");
+                input.value = "";
+                return;
+            }
+            
+            input.value = "";
+            speak("思考中<span class='loading-dots'></span>");
+            
+            const systemPrompt = `你是一个${state.type === 'custom' ? '可爱的' : state.type === 'cat' ? '猫' : state.type === 'dog' ? '狗' : state.type === 'rabbit' ? '兔子' : '仓鼠'}电子宠物。用可爱、简短（20字内）的方式回应，多用emoji。`;
+            
+            try {
+                const response = await fetchWithRetry(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${CONFIG.model}:generateContent?key=${CONFIG.apiKey}`,
+                    {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: text }] }],
+                            systemInstruction: { parts: [{ text: systemPrompt }] }
+                        })
+                    }
+                );
+                
+                const result = await response.json();
+                const reply = result.candidates?.[0]?.content?.parts?.[0]?.text || "喵？再说一遍？";
+                speak(reply);
+                gainExp(5);
+            } catch (error) {
+                speak("信号有些模糊... 📶");
+            }
+        }
+
+        // 探索功能
+        function startExplore() {
+            if (state.isExploring) return;
+            if (state.energy < 30) {
+                speak("我太累了，休息一下再去吧~ 😴");
+                return;
+            }
+            
+            state.isExploring = true;
+            state.energy -= 30;
+            document.getElementById('explore-modal').classList.remove('hidden');
+            document.getElementById('explore-btn').disabled = true;
+            
+            const scene = CONFIG.scenes[Math.floor(Math.random() * CONFIG.scenes.length)];
+            document.getElementById('explore-scene').style.background = scene.bg;
+            document.getElementById('explore-status').innerHTML = `探索 ${scene.biome} 中<span class="loading-dots"></span>`;
+            
+            setTimeout(() => {
+                const loot = generateLoot(scene);
+                state.inventory.push(loot);
+                document.getElementById('explore-status').innerHTML = `发现了 <span class="text-2xl">${loot.icon}</span> <strong>${loot.name}</strong>！`;
+                gainExp(20);
+                speak(`太好了！我找到了${loot.name}！🎉`);
+            }, 3000);
+        }
+
+        function stopExplore() {
+            state.isExploring = false;
+            document.getElementById('explore-modal').classList.add('hidden');
+            document.getElementById('explore-btn').disabled = false;
+        }
+
+        function generateLoot(scene) {
+            const lootName = scene.loot[Math.floor(Math.random() * scene.loot.length)];
+            const [icon, ...nameParts] = lootName.split('');
+            const rarities = ['普通', '稀有', '史诗'];
+            const rarity = rarities[Math.floor(Math.random() * rarities.length)];
+            
+            return {
+                icon: icon,
+                name: nameParts.join(''),
+                rarity: rarity,
+                timestamp: Date.now()
+            };
+        }
+
+        // 背包功能
+        function openInventory() {
+            document.getElementById('inventory-modal').classList.remove('hidden');
+            renderInventory();
+        }
+
+        function closeInventory() {
+            document.getElementById('inventory-modal').classList.add('hidden');
+        }
+
+        function renderInventory() {
+            const grid = document.getElementById('inventory-grid');
+            
+            if (state.inventory.length === 0) {
+                grid.innerHTML = `
+                    <div class="text-center text-slate-400 col-span-3 py-12">
+                        <div class="text-6xl mb-4">📦</div>
+                        <p class="text-lg">背包空空如也</p>
+                        <p class="text-sm mt-2">去探索世界寻找宝物吧！</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            grid.innerHTML = state.inventory.map(item => {
+                const rarityClass = item.rarity === '史诗' ? 'rarity-epic' : item.rarity === '稀有' ? 'rarity-rare' : 'rarity-common';
+                return `
+                    <div class="bg-gradient-to-br from-slate-50 to-slate-100 p-4 rounded-2xl text-center hover:shadow-lg transition-all border-2 border-slate-200">
+                        <div class="text-5xl mb-2">${item.icon}</div>
+                        <div class="font-bold text-sm ${rarityClass}">${item.name}</div>
+                        <div class="text-xs text-slate-500 mt-1">${item.rarity}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 存档系统
+        function saveGame() {
+            try {
+                localStorage.setItem('neo-pet-save', JSON.stringify({
+                    type: state.type,
+                    level: state.level,
+                    exp: state.exp,
+                    hunger: state.hunger,
+                    joy: state.joy,
+                    energy: state.energy,
+                    evolutionIndex: state.evolutionIndex,
+                    inventory: state.inventory,
+                    customImageData: state.customImageData
+                }));
+            } catch (e) {
+                console.warn('存档失败', e);
+            }
+        }
+
+        function loadGame() {
+            try {
+                const saved = localStorage.getItem('neo-pet-save');
+                if (saved) {
+                    const data = JSON.parse(saved);
+                    Object.assign(state, data);
+                    return true;
+                }
+            } catch (e) {
+                console.warn('读档失败', e);
+            }
+            return false;
+        }
+
+        // 事件监听
+        document.getElementById('send-btn').addEventListener('click', handleChat);
+        document.getElementById('pet-target').addEventListener('click', () => interact('play'));
+        document.getElementById('chat-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleChat();
+        });
+    </script>
+</body>
+</html>
