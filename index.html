@@ -166,6 +166,11 @@
         .btn-primary:active {
             transform: translateY(0);
         }
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
     </style>
 </head>
 <body class="flex flex-col h-screen select-none pet-font">
@@ -389,10 +394,10 @@
     </div>
 
     <script>
-        // 配置
+        // 配置 - 已修复版本
         const CONFIG = {
-            apiKey: "AIzaSyBANsq6BdDAZZlabJhoqrBAr4btPorMbG4", // 留空则聊天功能提示需要配置
-            model: "gemini-2.0-flash-exp",
+            apiKey: "AIzaSyBANsq6BdDAZZlabJhoqrBAr4btPorMbG4",
+            model: "gemini-1.5-flash", // 使用稳定版本
             decayRate: { hunger: 0.5, joy: 0.8 },
             petEmojis: {
                 cat: ['🐱', '😺', '😸', '😻', '🐈'],
@@ -426,22 +431,10 @@
             inventory: []
         };
 
-        // 工具函数
-        async function fetchWithRetry(url, options, retries = 3) {
-            for (let i = 0; i < retries; i++) {
-                try {
-                    const response = await fetch(url, {
-                        ...options,
-                        headers: { 'Content-Type': 'application/json', ...options.headers }
-                    });
-                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                    return response;
-                } catch (error) {
-                    if (i === retries - 1) throw error;
-                    await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
-                }
-            }
-        }
+        // 聊天防抖变量
+        let isChatProcessing = false;
+        let lastChatTime = 0;
+        const CHAT_COOLDOWN = 3000; // 3秒冷却
 
         // 选择宠物
         function selectPet(type) {
@@ -634,41 +627,105 @@
             }, 3000);
         }
 
-        // 聊天功能
+        // 聊天功能 - 完全修复版
         async function handleChat() {
-            const input = document.getElementById('chat-input');
-            const text = input.value.trim();
-            if (!text) return;
-            
-            if (!CONFIG.apiKey || CONFIG.apiKey === "") {
-                speak("💬 聊天功能需要配置 API Key<br><small class='text-xs opacity-70'>其他功能都可以正常使用！</small>");
-                input.value = "";
+            // 防止快速重复点击
+            const now = Date.now();
+            if (isChatProcessing) {
+                console.log('⏳ 正在处理中，请稍候...');
                 return;
             }
             
+            if (now - lastChatTime < CHAT_COOLDOWN) {
+                speak("主人，慢一点嘛~ 我还在思考上一个问题呢 🤔");
+                return;
+            }
+            
+            const input = document.getElementById('chat-input');
+            const sendBtn = document.getElementById('send-btn');
+            const text = input.value.trim();
+            
+            if (!text) return;
+            
+            // 检查 API Key
+            if (!CONFIG.apiKey) {
+                speak("主人，我还没有连接到 AI 大脑呢~ 🧠");
+                return;
+            }
+            
+            // 锁定状态
+            isChatProcessing = true;
+            lastChatTime = now;
             input.value = "";
+            input.disabled = true;
+            sendBtn.disabled = true;
+            
             speak("思考中<span class='loading-dots'></span>");
             
             const systemPrompt = `你是一个${state.type === 'custom' ? '可爱的' : state.type === 'cat' ? '猫' : state.type === 'dog' ? '狗' : state.type === 'rabbit' ? '兔子' : '仓鼠'}电子宠物。用可爱、简短（20字内）的方式回应，多用emoji。`;
             
             try {
-                const response = await fetchWithRetry(
+                console.log('📤 发送聊天请求:', text);
+                
+                const response = await fetch(
                     `https://generativelanguage.googleapis.com/v1beta/models/${CONFIG.model}:generateContent?key=${CONFIG.apiKey}`,
                     {
                         method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json'
+                        },
                         body: JSON.stringify({
-                            contents: [{ parts: [{ text: text }] }],
-                            systemInstruction: { parts: [{ text: systemPrompt }] }
+                            contents: [{ 
+                                parts: [{ text: text }] 
+                            }],
+                            systemInstruction: { 
+                                parts: [{ text: systemPrompt }] 
+                            }
                         })
                     }
                 );
                 
+                console.log('📥 响应状态:', response.status);
+                
+                // 特殊处理 429 错误
+                if (response.status === 429) {
+                    speak("主人，我说话太多累了~ 让我休息5分钟吧 😴💤");
+                    console.warn('⚠️ API 配额限制，请等待5分钟后重试');
+                    return;
+                }
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('❌ API 错误响应:', errorText);
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
                 const result = await response.json();
+                console.log('✅ AI 回复:', result);
+                
                 const reply = result.candidates?.[0]?.content?.parts?.[0]?.text || "喵？再说一遍？";
                 speak(reply);
                 gainExp(5);
+                
             } catch (error) {
-                speak("信号有些模糊... 📶");
+                console.error('❌ 聊天错误:', error);
+                
+                // 根据错误类型显示友好提示
+                if (error.message.includes('429')) {
+                    speak("主人，我说话太多累了~ 休息5分钟吧 😴");
+                } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                    speak("主人，网络好像断了呢~ 检查一下网络吧 🌐");
+                } else if (error.message.includes('401')) {
+                    speak("主人，API Key 好像不对哦~ 🔑");
+                } else {
+                    speak("唔... 我有点晕~ 稍后再试试吧 😵");
+                }
+            } finally {
+                // 重新启用输入
+                input.disabled = false;
+                sendBtn.disabled = false;
+                isChatProcessing = false;
+                input.focus();
             }
         }
 
@@ -791,7 +848,9 @@
         document.getElementById('send-btn').addEventListener('click', handleChat);
         document.getElementById('pet-target').addEventListener('click', () => interact('play'));
         document.getElementById('chat-input').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') handleChat();
+            if (e.key === 'Enter' && !isChatProcessing) {
+                handleChat();
+            }
         });
     </script>
 </body>
